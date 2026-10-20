@@ -1,0 +1,27 @@
+services:
+  bilibili-mcp:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      BILI_MCP_TOKEN: ${BILI_MCP_TOKEN:?Set BILI_MCP_TOKEN in .env}
+      BILI_ASR_ENABLED: ${BILI_ASR_ENABLED:-0}
+      BILI_WRITE_ENABLED: ${BILI_WRITE_ENABLED:-1}
+      BILI_ASR_MODEL: ${BILI_ASR_MODEL:-small}
+      BILI_ALLOWED_HOSTS: ${BILI_ALLOWED_HOSTS:-localhost:*,127.0.0.1:*,bilibili-mcp:8000}
+      BILI_ALLOWED_ORIGINS: ${BILI_ALLOWED_ORIGINS:-http://localhost:*,http://127.0.0.1:*}
+    volumes:
+      - bili-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    init: true
+    cpus: 2
+    mem_limit: 4g
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 20s
+    restart: unless-stopped
+volumes:
+  bili-data:
