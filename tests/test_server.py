@@ -62,7 +62,12 @@ async def test_http(monkeypatch, tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 names = {t.name for t in (await session.list_tools()).tools}
-                assert names == {'post_comment', 'login_start', 'login_poll', 'login_status', 'logout', 'search_videos', 'video_info', 'get_comments', 'read_video', 'transcription_status'}
+                assert names == {
+                    'post_comment', 'reply_comment', 'login_start', 'login_poll', 'login_status', 'bili_whoami',
+                    'logout', 'search_videos', 'video_info', 'get_comments', 'read_video',
+                    'transcription_status', 'hot_videos', 'weekly_hot', 'video_ranking',
+                    'user_info', 'user_videos', 'favorite_folders', 'favorite_content', 'add_to_favorites',
+                }
                 result = await session.call_tool('video_info', {'bvid': 'BV1234567890'})
                 assert not result.isError
                 assert (await session.call_tool('video_info', {'bvid': 'http://localhost'})).isError
@@ -260,3 +265,27 @@ async def test_post_comment(monkeypatch, tmp_path):
     result = await api.post_comment('BV1234567890', 'hello')
     assert result['rpid'] == '456'
     assert len(calls) == 1 and calls[0]['oid'] == 123
+
+
+async def test_reply_comment_uses_rpid_and_root(monkeypatch, tmp_path):
+    import bilibili_mcp.server as server_module
+    from mcp.server.fastmcp import FastMCP
+
+    monkeypatch.setenv('BILI_MCP_TOKEN', 'x' * 48)
+    monkeypatch.setenv('BILI_DATA_DIR', str(tmp_path))
+    captured = []
+    monkeypatch.setattr(Bilibili, 'info', lambda self, bvid: asyncio.sleep(0, result={'aid': 1}))
+    monkeypatch.setattr(server_module, 'comment', SimpleNamespace(
+        CommentResourceType=SimpleNamespace(VIDEO='video'),
+        send_comment=lambda **kwargs: asyncio.sleep(0, result=captured.append(kwargs) or {'rpid': 2})))
+    monkeypatch.setattr(Account, 'credential', lambda self: object())
+    original = FastMCP.streamable_http_app
+    app_tools = {}
+    def capture_app(self):
+        app_tools.update(self._tool_manager._tools)
+        return original(self)
+    monkeypatch.setattr(FastMCP, 'streamable_http_app', capture_app)
+    create_app()
+    result = await app_tools['reply_comment'].fn('BV1234567890', 'reply', 123, 456)
+    assert result['rpid'] == '2'
+    assert captured[0]['root'] == 456 and captured[0]['parent'] == 123

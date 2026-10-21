@@ -67,6 +67,11 @@ Momoi 的频道二维码投递尚未端到端验证。
 | `transcription_status` | 查询转写进度与结果 |
 | `get_comments` | 分页读取评论 |
 | `post_comment` | 发布顶层评论 |
+| `reply_comment` | 发布评论或回复指定评论 |
+| `hot_videos` / `weekly_hot` / `video_ranking` | 热门、每周必看与排行榜 |
+| `user_info` / `user_videos` | 用户资料和投稿 |
+| `favorite_folders` / `favorite_content` / `add_to_favorites` | 查看收藏夹并收藏视频 |
+| `bili_whoami` | 查询当前登录账号 |
 | `login_start` / `login_poll` | 创建二维码、完成扫码登录 |
 | `login_status` / `logout` | 检查登录、清除本地登录状态 |
 

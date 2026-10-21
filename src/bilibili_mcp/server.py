@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.responses import JSONResponse
 import uvicorn
+from bilibili_api import comment
 
 from .account import Account
 from .api import Bilibili
@@ -63,6 +64,17 @@ def create_app():
         return {'logged_in': bool(cred and await cred.check_valid())}
 
     @tool
+    async def bili_whoami() -> dict:
+        """Check which Bilibili account is logged in."""
+        cred = account.credential()
+        if not cred:
+            return {'logged_in': False}
+        try:
+            return {'logged_in': True, 'account': await api.user_info(int(cred.dedeuserid))}
+        except Exception:
+            return {'logged_in': False, 'message': 'Saved login is invalid or Bilibili is unavailable.'}
+
+    @tool
     async def logout() -> dict:
         """Remove local credentials and invalidate any pending QR login."""
         return await account.logout()
@@ -96,6 +108,24 @@ def create_app():
             from mcp.server.fastmcp.exceptions import ToolError
             raise ToolError('Comment submission failed or outcome unknown; do not retry blindly.') from None
 
+    @mcp.tool(annotations={'readOnlyHint': False, 'destructiveHint': True, 'idempotentHint': False})
+    async def reply_comment(bvid: str, text: str, rpid: int = 0, root: int = 0) -> dict:
+        """Post a top-level comment or reply to a comment. rpid=0 posts at top level."""
+        if rpid == 0:
+            return await api.post_comment(bvid, text)
+        if rpid < 0 or root < 0:
+            raise ValueError('Comment IDs must be non-negative')
+        cred = account.credential()
+        if not cred:
+            raise ValueError('Login required')
+        info = await api.info(bvid)
+        result = await comment.send_comment(
+            text=text, oid=info['aid'], type_=comment.CommentResourceType.VIDEO,
+            root=root or rpid, parent=rpid, credential=cred)
+        return {'status': 'submitted', 'bvid': bvid,
+                'rpid': str(result.get('rpid_str') or result.get('rpid') or ''),
+                'note': 'API accepted submission; public visibility is not verified. Do not retry blindly.'}
+
     @tool
     async def read_video(bvid: str, part: int = 1) -> dict:
         """Read timed subtitles, or automatically enqueue ASR when no subtitles exist. Cannot understand visual-only content."""
@@ -111,6 +141,47 @@ def create_app():
     async def transcription_status(job_id: str) -> dict:
         """Read ASR job status/result; unknown includes jobs lost on restart or evicted."""
         return jobs.status(job_id)
+
+    @tool
+    async def hot_videos(page: int = 1, page_size: int = 20) -> dict:
+        """Get currently trending Bilibili videos."""
+        return {'source': 'bilibili_untrusted', 'videos': await api.hot_videos(page, page_size)}
+
+    @tool
+    async def weekly_hot(week: int = 0) -> dict:
+        """Get the weekly featured list, or videos for a specific issue."""
+        return {'source': 'bilibili_untrusted', 'result': await api.weekly_hot(week)}
+
+    @tool
+    async def video_ranking(category: str = 'all', days: int = 3) -> dict:
+        """Get a Bilibili ranking category for three or seven days."""
+        return {'source': 'bilibili_untrusted', 'videos': await api.ranking(category, days)}
+
+    @tool
+    async def user_info(uid: int) -> dict:
+        """Get public profile information for a Bilibili UID."""
+        return {'source': 'bilibili_untrusted', **await api.user_info(uid)}
+
+    @tool
+    async def user_videos(uid: int, page: int = 1, page_size: int = 30,
+                          order: str = 'pubdate', keyword: str = '') -> dict:
+        """List public videos posted by a user."""
+        return {'source': 'bilibili_untrusted', **await api.user_videos(uid, page, page_size, order, keyword)}
+
+    @tool
+    async def favorite_folders(uid: int = 0) -> dict:
+        """List favorite folders. uid=0 means the logged-in account."""
+        return await api.favorite_folders(uid)
+
+    @tool
+    async def favorite_content(media_id: int, page: int = 1, keyword: str = '') -> dict:
+        """List videos in a favorite folder."""
+        return {'source': 'bilibili_untrusted', **await api.favorite_content(media_id, page, keyword)}
+
+    @mcp.tool(annotations={'readOnlyHint': False, 'destructiveHint': True, 'idempotentHint': True})
+    async def add_to_favorites(bvid: str, folder_id: int) -> dict:
+        """Add a video to one of the logged-in account's favorite folders."""
+        return await api.add_to_favorites(bvid, folder_id)
 
     @mcp.custom_route('/health', methods=['GET'])
     async def health(request):
