@@ -1,95 +1,69 @@
-# Bilibili MCP Server
+# Bilibili MCP
 
-让 AI 搜索 B 站、读懂视频内容、查看讨论并发表评论。
-独立部署，通过标准 MCP Streamable HTTP 接入 Momoi 或其他 MCP 客户端。
+Connect an MCP client to Bilibili. Search videos, read subtitles or speech transcripts, explore comments and trends, manage favorites, and post comments from your account.
 
-## 功能
+The server uses MCP Streamable HTTP and works with any compatible MCP client. It runs as a standalone Docker service; no companion agent or scheduler is required.
 
-- **搜索视频**：按关键词搜索，支持综合、播放量和最新排序。
-- **阅读视频**：优先读取字幕；没有字幕时自动使用 Whisper 转写音频，支持分 P 和时间分段。
-- **评论互动**：读取视频评论，使用已登录账号发布顶层评论。
-- **扫码登录**：通过 MCP 返回二维码，手机确认后保存登录状态，重启无需重复扫码。
+## Features
 
-所有功能开箱可用，无需额外开启 ASR 或评论。视频阅读仅基于字幕和语音，不分析画面。
+- Search videos by keyword and inspect video details and parts.
+- Read timed subtitles. When subtitles are unavailable, automatically transcribe audio with Whisper and check the result asynchronously.
+- Browse and reply to comments, and post top-level comments.
+- Explore trending, weekly featured, and ranked videos.
+- Browse public user profiles and uploads.
+- View favorite folders and videos, and save videos to a favorite folder.
+- Log in by scanning a QR code returned through MCP.
 
-## 快速启动
+Video reading covers subtitle and audio content; it does not interpret video frames. Comment tools post publicly as the logged-in account. Review content before posting.
 
-需要 Docker Compose。在仓库目录执行：
+## Deploy with Docker Compose
+
+Requirements: Docker Engine and the Docker Compose plugin.
 
 ```sh
 cp .env.example .env
-# 生成访问令牌，将结果填入 .env 的 BILI_MCP_TOKEN
+```
+
+Set `BILI_MCP_TOKEN` in `.env` to a random secret of at least 32 characters. Generate one with:
+
+```sh
 python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
+```
+
+Start the server:
+
+```sh
 docker compose up -d --build
 ```
 
-服务容器以 root 运行并监听 `0.0.0.0:8888`，仅供容器网络访问，不发布宿主端口。登录凭证和模型保存在 Docker 命名卷中。
-默认限制为 2 CPU、4 GB 内存；首次转写会下载 Whisper 模型，需要访问 Hugging Face。
+The service listens on port `8888` inside its Docker network and is not published to the host by default. Persistent data is stored in the `bili-data` volume. Whisper downloads its model on first use, so the container needs outbound network access.
 
-## 接入 MCP 客户端
+To use a bind mount instead, replace `bili-data:/data` in `compose.yaml` with a host path such as `./data/bilibili:/data`. To connect from outside the Docker network, publish a host port in your Compose configuration and protect remote access with TLS and network controls.
 
-在客户端的远程 MCP 配置中填写：
+## Connect an MCP Client
+
+Add a remote Streamable HTTP MCP server with this configuration. The client must share a Docker network with this service; `bilibili` is the Compose service/container name.
 
 ```json
 {
   "url": "http://bilibili:8888/mcp",
   "headers": {
-    "Authorization": "Bearer <你的 BILI_MCP_TOKEN>"
-  },
-  "description": "搜索 B 站视频、阅读字幕或语音转写、查看和发表评论"
+    "Authorization": "Bearer <BILI_MCP_TOKEN>"
+  }
 }
 ```
 
-客户端需支持 Streamable HTTP；显示登录二维码还需支持 MCP 图片内容。该配置适用于与本服务接入同一 Docker 网络的客户端；
-如使用独立 Compose 项目，需将它们加入共享网络。宿主机客户端如有需要，可在自己的 Compose 配置中发布端口。
+If the client runs in a different Compose project, attach both projects to a shared Docker network. If the client runs on the host, publish a host port and use that address instead.
 
-接入后，让 AI 调用 `login_start` 展示二维码，用 B 站 App 扫码确认，再调用 `login_poll` 完成登录。
-Momoi 的频道二维码投递尚未端到端验证。
+After connecting, call `login_start` and scan the returned QR image in the Bilibili app. Then call `login_poll` with its `login_id` until login completes. The client should support MCP image content to display the QR code.
 
-## 配置
+## Configuration
 
-在 `.env` 中配置，修改后执行 `docker compose up -d`：
-
-| 配置项 | 默认值 | 说明 |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `BILI_MCP_TOKEN` | 必填 | MCP 访问令牌，至少 32 字符 |
-| `BILI_ASR_MODEL` | `small` | Whisper 模型，如 `tiny`、`base`、`small`、`medium` |
+| `BILI_MCP_TOKEN` | Required | Bearer token for MCP requests (minimum 32 characters). |
+| `BILI_ASR_MODEL` | `small` | Whisper model used when a video has no subtitles. |
 
-服务仅在容器网络提供端口 `8888`，不要将其直接暴露到不受信任的网络。所有客户端共享同一个 B 站账号，仅适合受信任的个人使用。
+## License and Attribution
 
-## 工具
-
-| 工具 | 用途 |
-| --- | --- |
-| `search_videos` | 搜索视频 |
-| `video_info` | 获取详情和分 P 信息 |
-| `read_video` | 读取字幕，无字幕时返回 ASR 任务 ID |
-| `transcription_status` | 查询转写进度与结果 |
-| `get_comments` | 分页读取评论 |
-| `post_comment` | 发布顶层评论 |
-| `reply_comment` | 发布评论或回复指定评论 |
-| `hot_videos` / `weekly_hot` / `video_ranking` | 热门、每周必看与排行榜 |
-| `user_info` / `user_videos` | 用户资料和投稿 |
-| `favorite_folders` / `favorite_content` / `add_to_favorites` | 查看收藏夹并收藏视频 |
-| `bili_whoami` | 查询当前登录账号 |
-| `login_start` / `login_poll` | 创建二维码、完成扫码登录 |
-| `login_status` / `logout` | 检查登录、清除本地登录状态 |
-
-ASR 支持最长 30 分钟视频，单任务限时 15 分钟，单并发处理；任务与转写结果不跨重启保留。
-评论会以你的账号公开发出，请确认内容；发送超时可能已经成功，不要盲目重试。
-
-## 开发
-
-```sh
-uv sync --frozen
-uv run pytest
-```
-
-本地运行需设置 `BILI_MCP_TOKEN` 和可写的 `BILI_DATA_DIR`，然后执行 `uv run bilibili-mcp`。
-
-## 来源与许可
-
-Fork 自 [c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)，
-保留上游 Git 历史、MIT 许可证与版权署名，并改造为不依赖 DSH 的独立服务。
-上游内置的 `AGI_Ananas/bilibili-mcp` 源码及许可证保留在 `vendor/bilibili-mcp/`。
-详见 [LICENSE](LICENSE) 和 [NOTICE.md](NOTICE.md)。
+MIT. This project is forked from [c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll) and retains its upstream Git history. It also includes code from `AGI_Ananas/bilibili-mcp`; see `vendor/bilibili-mcp/LICENSE` and `NOTICE.md` for attribution and license details.
