@@ -1,7 +1,9 @@
 import asyncio
 import base64
 import json
+import os
 import socket
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -96,6 +98,11 @@ async def test_account(monkeypatch, tmp_path):
     assert (await account.poll('wrong'))['status'] == 'unknown_or_replaced'
     await account.logout()
     assert not account.path.exists()
+
+
+def test_account_does_not_chmod_existing_data_directory(monkeypatch, tmp_path):
+    monkeypatch.setattr(Path, 'chmod', lambda *args, **kwargs: pytest.fail('must not chmod another owner mount'))
+    Account(tmp_path)
 
 
 async def test_jobs(monkeypatch, tmp_path):

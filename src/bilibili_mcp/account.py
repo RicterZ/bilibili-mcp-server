@@ -15,7 +15,6 @@ import base64
 class Account:
     def __init__(self, directory: Path):
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        directory.chmod(0o700)
         self.path = directory / 'credential.json'
         self.lock = asyncio.Lock()
         self.session = None
