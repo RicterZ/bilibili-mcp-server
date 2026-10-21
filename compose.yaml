@@ -2,11 +2,12 @@ services:
   bilibili-mcp:
     container_name: bilibili
     build: .
-    ports:
-      - "8888:8000"
+    expose:
+      - "8888"
     environment:
       BILI_MCP_TOKEN: ${BILI_MCP_TOKEN:?Set BILI_MCP_TOKEN in .env}
       BILI_ASR_MODEL: ${BILI_ASR_MODEL:-small}
+      PORT: "8888"
     volumes:
       - bili-data:/data
     read_only: true
