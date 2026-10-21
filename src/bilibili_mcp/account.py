@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from bilibili_api import Credential
-from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
+from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginChannel, QrCodeLoginEvents
 from mcp.types import ImageContent, TextContent
 import base64
 
@@ -47,7 +47,7 @@ class Account:
 
     async def start(self):
         async with self.lock:
-            qr = QrCodeLogin()
+            qr = QrCodeLogin(QrCodeLoginChannel.TV)
             await qr.generate_qrcode()
             self.session = qr
             self.login_id = secrets.token_urlsafe(24)
@@ -67,7 +67,12 @@ class Account:
                 return {'status': 'expired'}
             state = await self.session.check_state()
             if state == QrCodeLoginEvents.DONE:
-                self.save(self.session.get_credential())
+                cred = self.session.get_credential()
+                if not cred or not cred.sessdata:
+                    self.session = None
+                    return {'status': 'credential_missing',
+                            'message': 'Bilibili confirmed the QR login but returned no session cookie; start a new login.'}
+                self.save(cred)
                 self.session = None
                 return {'status': 'done'}
             if state == QrCodeLoginEvents.TIMEOUT:

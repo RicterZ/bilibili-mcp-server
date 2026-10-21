@@ -37,6 +37,8 @@ async def test_http(monkeypatch, tmp_path):
     monkeypatch.setattr(Bilibili, 'subtitles', subtitles)
     monkeypatch.setattr(Jobs, 'submit', submit)
     class QR:
+        def __init__(self, platform):
+            assert platform.value == 'tv'
         async def generate_qrcode(self): pass
         def get_qrcode_picture(self):
             return SimpleNamespace(content=b'png-test')
@@ -143,6 +145,8 @@ async def test_login_states_and_atomic_completion(monkeypatch, tmp_path):
     account = Account(tmp_path)
     calls = []
     class QR:
+        def __init__(self, platform):
+            assert platform.value == 'tv'
         async def generate_qrcode(self): pass
         def get_qrcode_picture(self): return SimpleNamespace(content=b'png')
         async def check_state(self):
@@ -159,6 +163,25 @@ async def test_login_states_and_atomic_completion(monkeypatch, tmp_path):
     results = await asyncio.gather(account.poll(account.login_id), account.poll(account.login_id))
     assert len(calls) == 1
     assert {r['status'] for r in results} == {'done', 'unknown_or_replaced'}
+
+
+async def test_login_does_not_save_empty_session(monkeypatch, tmp_path):
+    from bilibili_api.login_v2 import QrCodeLoginEvents
+    account = Account(tmp_path)
+
+    class QR:
+        def __init__(self, platform):
+            assert platform.value == 'tv'
+        async def generate_qrcode(self): pass
+        def get_qrcode_picture(self): return SimpleNamespace(content=b'png')
+        async def check_state(self): return QrCodeLoginEvents.DONE
+        def get_credential(self):
+            return SimpleNamespace(sessdata='', bili_jct='', buvid3='', dedeuserid='', ac_time_value='refresh')
+
+    monkeypatch.setattr('bilibili_mcp.account.QrCodeLogin', QR)
+    await account.start()
+    assert (await account.poll(account.login_id))['status'] == 'credential_missing'
+    assert not account.path.exists()
 
 
 async def test_worker_timeout_and_cleanup(monkeypatch, tmp_path):
