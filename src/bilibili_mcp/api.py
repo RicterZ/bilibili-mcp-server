@@ -173,10 +173,15 @@ class Bilibili:
                 response.raise_for_status()
                 if response.status != 200:
                     raise ValueError('Unexpected subtitle redirect')
-                raw = await response.content.read(2_000_001)
-                if len(raw) > 2_000_000:
+                chunks = bytearray()
+                while len(chunks) <= 2_000_000:
+                    chunk = await response.content.read(min(64 * 1024, 2_000_001 - len(chunks)))
+                    if not chunk:
+                        break
+                    chunks.extend(chunk)
+                if len(chunks) > 2_000_000:
                     raise ValueError('Subtitle exceeds result limit')
-                data = json.loads(raw)
+                data = json.loads(chunks)
         segments = [{'start': x['from'], 'end': x['to'], 'text': x['content']}
                     for x in data.get('body', [])]
         return info, selected, {'source': 'subtitle_untrusted', 'language': track.get('lan'),

@@ -139,6 +139,38 @@ async def test_subtitle_no_fallback(monkeypatch, tmp_path):
         await api.subtitles('BV1234567890', 0)
 
 
+async def test_subtitle_reads_full_chunked_json(monkeypatch, tmp_path):
+    payload = json.dumps({'body': [{'from': 1, 'to': 2, 'content': 'hello'}]}).encode()
+
+    class Content:
+        def __init__(self): self.chunks = [payload[:7], payload[7:19], payload[19:]]
+        async def read(self, size): return self.chunks.pop(0) if self.chunks else b''
+
+    class Response:
+        status = 200
+        content = Content()
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        def raise_for_status(self): pass
+
+    class Session:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        def get(self, *args, **kwargs): return Response()
+
+    class V:
+        async def get_info(self): return {'pages': [{'cid': 1, 'duration': 5}]}
+        async def get_subtitle(self, cid):
+            return {'subtitles': [{'lan': 'zh-CN', 'subtitle_url': 'https://subtitle.hdslb.com/test'}]}
+
+    monkeypatch.setattr('bilibili_mcp.api.aiohttp.ClientSession', Session)
+    api = Bilibili(Account(tmp_path))
+    monkeypatch.setattr(api, 'video', lambda _: V())
+    _, _, result = await api.subtitles('BV1234567890', 1)
+    assert result['segments'] == [{'start': 1, 'end': 2, 'text': 'hello'}]
+
+
 def test_token_required(monkeypatch):
     monkeypatch.delenv('BILI_MCP_TOKEN', raising=False)
     with pytest.raises(ValueError): create_app()
