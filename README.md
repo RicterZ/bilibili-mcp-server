@@ -23,7 +23,7 @@ python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
 docker compose up -d --build
 ```
 
-服务地址为 `http://127.0.0.1:8000/mcp`。登录凭证和模型保存在 Docker 命名卷中。
+服务容器内监听 `0.0.0.0:8000`，宿主发布为 `8888`。登录凭证和模型保存在 Docker 命名卷中。
 默认限制为 2 CPU、4 GB 内存；首次转写会下载 Whisper 模型，需要访问 Hugging Face。
 
 ## 接入 MCP 客户端
@@ -32,7 +32,7 @@ docker compose up -d --build
 
 ```json
 {
-  "url": "http://127.0.0.1:8000/mcp",
+  "url": "http://127.0.0.1:8888/mcp",
   "headers": {
     "Authorization": "Bearer <你的 BILI_MCP_TOKEN>"
   },
@@ -41,7 +41,8 @@ docker compose up -d --build
 ```
 
 客户端需支持 Streamable HTTP；显示登录二维码还需支持 MCP 图片内容。
-同一 Docker 网络中的客户端可使用 `http://bilibili-mcp:8000/mcp`。
+该配置示例适用于宿主机客户端。同一 Compose 网络中的客户端使用 `http://bilibili:8000/mcp`；
+将 compose service 名改为 `bilibili`，或按实际 service 名调整 URL。
 
 接入后，让 AI 调用 `login_start` 展示二维码，用 B 站 App 扫码确认，再调用 `login_poll` 完成登录。
 Momoi 的频道二维码投递尚未端到端验证。
@@ -54,10 +55,8 @@ Momoi 的频道二维码投递尚未端到端验证。
 | --- | --- | --- |
 | `BILI_MCP_TOKEN` | 必填 | MCP 访问令牌，至少 32 字符 |
 | `BILI_ASR_MODEL` | `small` | Whisper 模型，如 `tiny`、`base`、`small`、`medium` |
-| `BILI_ALLOWED_HOSTS` | 本机与服务名 | 允许的请求 Host，逗号分隔；远程部署时填写实际域名和端口 |
-| `BILI_ALLOWED_ORIGINS` | 本机 HTTP 地址 | 允许的浏览器 Origin，逗号分隔；浏览器跨域接入时配置 |
 
-默认仅监听宿主机回环端口。远程访问请配置 TLS 反向代理和对应 Host/Origin；不要公开令牌或数据卷。
+端口 `8888` 发布到宿主机所有网卡；远程访问请配置 TLS 反向代理和防火墙。不要公开令牌或数据卷。
 所有客户端共享同一个 B 站账号，仅适合受信任的个人使用。
 
 ## 工具

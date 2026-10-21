@@ -1,13 +1,12 @@
 services:
   bilibili-mcp:
+    container_name: bilibili
     build: .
     ports:
-      - "127.0.0.1:8000:8000"
+      - "8888:8000"
     environment:
       BILI_MCP_TOKEN: ${BILI_MCP_TOKEN:?Set BILI_MCP_TOKEN in .env}
       BILI_ASR_MODEL: ${BILI_ASR_MODEL:-small}
-      BILI_ALLOWED_HOSTS: ${BILI_ALLOWED_HOSTS:-localhost:*,127.0.0.1:*,bilibili-mcp:8000}
-      BILI_ALLOWED_ORIGINS: ${BILI_ALLOWED_ORIGINS:-http://localhost:*,http://127.0.0.1:*}
     volumes:
       - bili-data:/data
     read_only: true
