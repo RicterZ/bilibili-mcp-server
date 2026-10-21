@@ -55,7 +55,8 @@ async def test_http(monkeypatch, tmp_path):
             assert (await client.get(url + '/health')).status_code == 200
             for method in ('GET', 'POST', 'DELETE'):
                 assert (await client.request(method, url + '/mcp')).status_code == 401
-            assert (await client.post(url + '/mcp', headers={'Authorization': 'Bearer ' + 'x'*48, 'Host': 'evil.example', 'Content-Type': 'application/json'})).status_code == 421
+            response = await client.post(url + '/mcp', headers={'Authorization': 'Bearer ' + 'x'*48, 'Host': 'external.example', 'Content-Type': 'application/json'})
+            assert response.status_code != 421
         async with streamable_http_client(url + '/mcp', http_client=httpx.AsyncClient(headers={'Authorization': 'Bearer ' + 'x'*48})) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()

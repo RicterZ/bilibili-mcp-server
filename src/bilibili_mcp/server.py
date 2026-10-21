@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.responses import JSONResponse
 import uvicorn
 
@@ -29,7 +30,8 @@ def create_app():
             await jobs.close()
 
     mcp = FastMCP('bilibili-mcp', stateless_http=True, json_response=True,
-                  lifespan=lifespan)
+                  lifespan=lifespan, transport_security=TransportSecuritySettings(
+                      enable_dns_rebinding_protection=False))
 
     def tool(fn):
         # Never return upstream exception strings: they can contain request cookies/URLs.
