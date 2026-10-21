@@ -10,6 +10,6 @@ COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable
 ENV PATH="/app/.venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 BILI_DATA_DIR=/data HF_HOME=/data/huggingface BILI_MODEL_DIR=/data/models
 USER 10001:10001
-EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+EXPOSE 8888
+HEALTHCHECK --interval=30s --timeout=5s CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/health', timeout=3)"]
 CMD ["bilibili-mcp"]
