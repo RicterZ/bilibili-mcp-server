@@ -16,15 +16,24 @@ from bilibili_mcp.jobs import Jobs
 from bilibili_mcp.server import create_app
 
 
-@pytest.mark.parametrize("write_enabled", [False, True])
-async def test_http(monkeypatch, tmp_path, write_enabled):
-    monkeypatch.setenv("BILI_WRITE_ENABLED", "1" if write_enabled else "0")
+async def test_http(monkeypatch, tmp_path):
     monkeypatch.setenv('BILI_MCP_TOKEN', 'x' * 48)
     monkeypatch.setenv('BILI_DATA_DIR', str(tmp_path))
     async def info(self, bvid):
         validate_bvid(bvid)
         return {'bvid': bvid, 'title': 'mock'}
     monkeypatch.setattr(Bilibili, 'info', info)
+    async def subtitles(self, bvid, part):
+        if part == 3:
+            raise RuntimeError('upstream unavailable')
+        result = {'source': 'subtitle_untrusted', 'segments': []} if part == 2 else None
+        return {'duration': 5}, {'cid': part, 'duration': 1801 if part == 4 else 5}, result
+    submissions = []
+    def submit(self, bvid, cid, part):
+        submissions.append((bvid, cid, part))
+        return {'job_id': 'mock-job', 'status': 'queued'}
+    monkeypatch.setattr(Bilibili, 'subtitles', subtitles)
+    monkeypatch.setattr(Jobs, 'submit', submit)
     class QR:
         async def generate_qrcode(self): pass
         def get_qrcode_picture(self):
@@ -49,10 +58,20 @@ async def test_http(monkeypatch, tmp_path, write_enabled):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 names = {t.name for t in (await session.list_tools()).tools}
-                assert names - ({'post_comment'} if write_enabled else set()) == {'login_start', 'login_poll', 'login_status', 'logout', 'search_videos', 'video_info', 'get_comments', 'read_video', 'transcription_status'}
+                assert names == {'post_comment', 'login_start', 'login_poll', 'login_status', 'logout', 'search_videos', 'video_info', 'get_comments', 'read_video', 'transcription_status'}
                 result = await session.call_tool('video_info', {'bvid': 'BV1234567890'})
                 assert not result.isError
                 assert (await session.call_tool('video_info', {'bvid': 'http://localhost'})).isError
+                read_tool = next(t for t in (await session.list_tools()).tools if t.name == 'read_video')
+                assert 'allow_asr' not in read_tool.inputSchema['properties']
+                result = await session.call_tool('read_video', {'bvid': 'BV1234567890'})
+                assert not result.isError
+                assert json.loads(result.content[0].text)['job_id'] == 'mock-job'
+                result = await session.call_tool('read_video', {'bvid': 'BV1234567890', 'part': 2})
+                assert json.loads(result.content[0].text)['source'] == 'subtitle_untrusted'
+                for part in (3, 4):
+                    assert (await session.call_tool('read_video', {'bvid': 'BV1234567890', 'part': part})).isError
+                assert submissions == [('BV1234567890', 1, 1)]
                 qr = await session.call_tool('login_start', {})
                 assert any(x.type == 'image' and base64.b64decode(x.data) == b'png-test' for x in qr.content)
     finally:
@@ -187,18 +206,3 @@ async def test_post_comment(monkeypatch, tmp_path):
     result = await api.post_comment('BV1234567890', 'hello')
     assert result['rpid'] == '456'
     assert len(calls) == 1 and calls[0]['oid'] == 123
-
-
-async def test_write_registered_by_default(monkeypatch, tmp_path):
-    monkeypatch.delenv('BILI_WRITE_ENABLED', raising=False)
-    monkeypatch.setenv('BILI_MCP_TOKEN', 'x' * 48)
-    monkeypatch.setenv('BILI_DATA_DIR', str(tmp_path))
-    from mcp.server.fastmcp import FastMCP
-    original = FastMCP.streamable_http_app
-    found = []
-    def inspect_app(self):
-        found.extend(self._tool_manager._tools)
-        return original(self)
-    monkeypatch.setattr(FastMCP, 'streamable_http_app', inspect_app)
-    create_app()
-    assert 'post_comment' in found
