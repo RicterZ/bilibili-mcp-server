@@ -37,8 +37,7 @@ async def test_http(monkeypatch, tmp_path):
     monkeypatch.setattr(Bilibili, 'subtitles', subtitles)
     monkeypatch.setattr(Jobs, 'submit', submit)
     class QR:
-        def __init__(self, platform):
-            assert platform.value == 'tv'
+        def __init__(self): pass
         async def generate_qrcode(self): pass
         def get_qrcode_picture(self):
             return SimpleNamespace(content=b'png-test')
@@ -141,20 +140,33 @@ def test_token_required(monkeypatch):
 
 
 async def test_login_states_and_atomic_completion(monkeypatch, tmp_path):
-    from bilibili_api.login_v2 import QrCodeLoginEvents
     account = Account(tmp_path)
     calls = []
-    class QR:
-        def __init__(self, platform):
-            assert platform.value == 'tv'
-        async def generate_qrcode(self): pass
-        def get_qrcode_picture(self): return SimpleNamespace(content=b'png')
-        async def check_state(self):
+
+    class Response:
+        class Headers:
+            def getall(self, key, default):
+                return ['SESSDATA=secret; Path=/; HttpOnly', 'bili_jct=csrf; Path=/']
+        headers = Headers()
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def json(self):
             calls.append(1)
             await asyncio.sleep(.01)
-            return QrCodeLoginEvents.DONE
-        def get_credential(self):
-            return SimpleNamespace(sessdata='secret', bili_jct='csrf', buvid3=None, dedeuserid='123', ac_time_value=None)
+            return {'data': {'code': 0}}
+
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        def get(self, *args, **kwargs): return Response()
+
+    monkeypatch.setattr('bilibili_mcp.account.aiohttp.ClientSession', Client)
+
+    class QR:
+        _QrCodeLogin__qr_key = 'test-key'
+        async def generate_qrcode(self): pass
+        def get_qrcode_picture(self): return SimpleNamespace(content=b'png')
     monkeypatch.setattr('bilibili_mcp.account.QrCodeLogin', QR)
     await account.start()
     old = account.login_id
@@ -166,17 +178,28 @@ async def test_login_states_and_atomic_completion(monkeypatch, tmp_path):
 
 
 async def test_login_does_not_save_empty_session(monkeypatch, tmp_path):
-    from bilibili_api.login_v2 import QrCodeLoginEvents
     account = Account(tmp_path)
 
+    class Response:
+        class Headers:
+            def getall(self, key, default): return []
+        headers = Headers()
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def json(self): return {'data': {'code': 0}}
+
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        def get(self, *args, **kwargs): return Response()
+
+    monkeypatch.setattr('bilibili_mcp.account.aiohttp.ClientSession', Client)
+
     class QR:
-        def __init__(self, platform):
-            assert platform.value == 'tv'
+        _QrCodeLogin__qr_key = 'test-key'
         async def generate_qrcode(self): pass
         def get_qrcode_picture(self): return SimpleNamespace(content=b'png')
-        async def check_state(self): return QrCodeLoginEvents.DONE
-        def get_credential(self):
-            return SimpleNamespace(sessdata='', bili_jct='', buvid3='', dedeuserid='', ac_time_value='refresh')
 
     monkeypatch.setattr('bilibili_mcp.account.QrCodeLogin', QR)
     await account.start()

@@ -4,12 +4,17 @@ import os
 import secrets
 import tempfile
 import time
+from http.cookies import SimpleCookie
 from pathlib import Path
 
+import aiohttp
 from bilibili_api import Credential
-from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginChannel, QrCodeLoginEvents
+from bilibili_api.login_v2 import QrCodeLogin
 from mcp.types import ImageContent, TextContent
 import base64
+
+_POLL_URL = 'https://passport.bilibili.com/x/passport-login/web/qrcode/poll'
+_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 
 
 class Account:
@@ -47,7 +52,7 @@ class Account:
 
     async def start(self):
         async with self.lock:
-            qr = QrCodeLogin(QrCodeLoginChannel.TV)
+            qr = QrCodeLogin()
             await qr.generate_qrcode()
             self.session = qr
             self.login_id = secrets.token_urlsafe(24)
@@ -65,20 +70,41 @@ class Account:
             if time.monotonic() >= self.expires:
                 self.session = None
                 return {'status': 'expired'}
-            state = await self.session.check_state()
-            if state == QrCodeLoginEvents.DONE:
-                cred = self.session.get_credential()
-                if not cred or not cred.sessdata:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as client:
+                async with client.get(
+                    _POLL_URL,
+                    params={'qrcode_key': self.session._QrCodeLogin__qr_key,
+                            'source': 'main-fe-header'},
+                    headers={'User-Agent': _USER_AGENT},
+                    allow_redirects=False,
+                ) as response:
+                    payload = await response.json()
+                    cookies = SimpleCookie()
+                    for header in response.headers.getall('Set-Cookie', []):
+                        cookies.load(header)
+            code = payload.get('data', {}).get('code')
+            if code == 0:
+                cred = Credential(
+                    sessdata=cookies.get('SESSDATA', {}).value if 'SESSDATA' in cookies else '',
+                    bili_jct=cookies.get('bili_jct', {}).value if 'bili_jct' in cookies else '',
+                    buvid3=cookies.get('buvid3', {}).value if 'buvid3' in cookies else '',
+                    dedeuserid=cookies.get('DedeUserID', {}).value if 'DedeUserID' in cookies else '',
+                )
+                if not cred.sessdata:
                     self.session = None
                     return {'status': 'credential_missing',
                             'message': 'Bilibili confirmed the QR login but returned no session cookie; start a new login.'}
                 self.save(cred)
                 self.session = None
                 return {'status': 'done'}
-            if state == QrCodeLoginEvents.TIMEOUT:
+            if code == 86038:
                 self.session = None
                 return {'status': 'expired'}
-            return {'status': 'waiting_confirmation' if state == QrCodeLoginEvents.CONF else 'waiting_scan'}
+            if code == 86090:
+                return {'status': 'waiting_confirmation'}
+            if code == 86101:
+                return {'status': 'waiting_scan'}
+            return {'status': 'unknown', 'code': code}
 
     async def logout(self):
         async with self.lock:
