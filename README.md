@@ -23,7 +23,7 @@ python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
 docker compose up -d --build
 ```
 
-服务容器内监听 `0.0.0.0:8888`，仅供容器网络访问，不发布宿主端口。登录凭证和模型保存在 Docker 命名卷中。
+服务容器以 root 运行并监听 `0.0.0.0:8888`，仅供容器网络访问，不发布宿主端口。登录凭证和模型保存在 Docker 命名卷中。
 默认限制为 2 CPU、4 GB 内存；首次转写会下载 Whisper 模型，需要访问 Hugging Face。
 
 ## 接入 MCP 客户端
