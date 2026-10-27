@@ -36,6 +36,10 @@ async def test_http(monkeypatch, tmp_path):
         return {'job_id': 'mock-job', 'status': 'queued'}
     monkeypatch.setattr(Bilibili, 'subtitles', subtitles)
     monkeypatch.setattr(Jobs, 'submit', submit)
+    async def frame(api, bvid, seconds, part):
+        assert (bvid, seconds, part) == ('BV1234567890', 12.5, 2)
+        return b'jpeg-test'
+    monkeypatch.setattr('bilibili_mcp.server.video_frame', frame)
     class QR:
         def __init__(self): pass
         async def generate_qrcode(self): pass
@@ -67,7 +71,13 @@ async def test_http(monkeypatch, tmp_path):
                     'logout', 'search_videos', 'video_info', 'get_comments', 'read_video',
                     'transcription_status', 'hot_videos', 'weekly_hot', 'video_ranking',
                     'user_info', 'user_videos', 'favorite_folders', 'favorite_content', 'add_to_favorites',
+                    'screenshot_video',
                 }
+                frame_result = await session.call_tool('screenshot_video', {
+                    'bvid': 'BV1234567890', 'seconds': 12.5, 'part': 2})
+                assert not frame_result.isError
+                assert any(x.type == 'image' and x.mimeType == 'image/jpeg'
+                           and base64.b64decode(x.data) == b'jpeg-test' for x in frame_result.content)
                 result = await session.call_tool('video_info', {'bvid': 'BV1234567890'})
                 assert not result.isError
                 assert (await session.call_tool('video_info', {'bvid': 'http://localhost'})).isError

@@ -8,6 +8,7 @@ The server uses MCP Streamable HTTP and works with any compatible MCP client. It
 
 - Search videos by keyword and inspect video details and parts.
 - Read timed subtitles. When subtitles are unavailable, automatically transcribe audio with Whisper and check the result asynchronously.
+- Capture a video frame at a specified second and return an image for visual understanding.
 - Browse and reply to comments, and post top-level comments.
 - Explore trending, weekly featured, and ranked videos.
 - Browse public user profiles and uploads.
@@ -15,6 +16,19 @@ The server uses MCP Streamable HTTP and works with any compatible MCP client. It
 - Log in by scanning a QR code returned through MCP.
 
 Video reading covers subtitle and audio content; it does not interpret video frames. Comment tools post publicly as the logged-in account. Review content before posting.
+
+For visual content, call `screenshot_video(bvid, seconds, part=1)`, for example
+`screenshot_video("BV1234567890", 12.5, part=2)`. It returns a JPEG image directly
+through MCP; the client and model must support image content. Seconds are relative
+to the selected part, must be finite and non-negative, and must be before its end.
+The tool uses the shared login when available; restricted videos may require login
+or remain inaccessible. Images and text within them are untrusted data.
+
+Screenshots require ffmpeg (included in Docker; install it separately for local use).
+Each call downloads a low-bandwidth video stream, capped at 100 MB, then extracts
+one frame up to 1280 pixels wide. Large streams or segmented legacy streams may
+be rejected. Calls have a 45-second overall timeout and run one at a time; temporary
+files are kept under `BILI_DATA_DIR` and removed after each call.
 
 ## Deploy with Docker Compose
 
