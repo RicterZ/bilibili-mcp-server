@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import base64
 from contextlib import asynccontextmanager
@@ -18,10 +19,7 @@ from .jobs import Jobs
 from .frames import video_frame
 
 
-def create_app():
-    token = os.environ.get('BILI_MCP_TOKEN', '')
-    if len(token) < 32:
-        raise ValueError('BILI_MCP_TOKEN must contain at least 32 characters')
+def create_server():
     account = Account(Path(os.environ.get('BILI_DATA_DIR', '/data')))
     api = Bilibili(account)
     jobs = Jobs(account, model=os.environ.get('BILI_ASR_MODEL', 'small'))
@@ -206,7 +204,14 @@ def create_app():
     async def health(request):
         return JSONResponse({'status': 'ok'})
 
-    inner = mcp.streamable_http_app()
+    return mcp
+
+
+def create_app():
+    token = os.environ.get('BILI_MCP_TOKEN', '')
+    if len(token) < 32:
+        raise ValueError('BILI_MCP_TOKEN must contain at least 32 characters')
+    inner = create_server().streamable_http_app()
 
     async def app(scope, receive, send):
         if scope['type'] == 'http' and scope['path'] != '/health':
@@ -220,7 +225,13 @@ def create_app():
 
 
 def main():
-    uvicorn.run(create_app(), host='0.0.0.0', port=int(os.environ.get('PORT', '8888')), access_log=False)
+    parser = argparse.ArgumentParser(description='Standalone Bilibili MCP server')
+    parser.add_argument('--transport', choices=('streamable-http', 'stdio'), default='streamable-http')
+    args = parser.parse_args()
+    if args.transport == 'stdio':
+        create_server().run(transport='stdio')
+    else:
+        uvicorn.run(create_app(), host='0.0.0.0', port=int(os.environ.get('PORT', '8888')), access_log=False)
 
 
 if __name__ == '__main__':

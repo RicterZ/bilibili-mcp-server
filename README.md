@@ -2,7 +2,7 @@
 
 Connect an MCP client to Bilibili. Search videos, read subtitles or speech transcripts, explore comments and trends, manage favorites, and post comments from your account.
 
-The server uses MCP Streamable HTTP and works with any compatible MCP client. It runs as a standalone Docker service; no companion agent or scheduler is required.
+The server supports MCP Streamable HTTP (default) and local stdio. It runs as a standalone Docker service or a subprocess launched by your agent; no companion agent or scheduler is required.
 
 ## Features
 
@@ -71,12 +71,59 @@ If the client runs in a different Compose project, attach both projects to a sha
 
 After connecting, call `login_start` and scan the returned QR image in the Bilibili app. Then call `login_poll` with its `login_id` until login completes. The client should support MCP image content to display the QR code.
 
+## Connect a Local Agent over stdio
+
+The installed MCP SDK supports stdio directly, so both transports share the same
+tools, account storage, and ASR lifecycle without an HTTP bridge or extra dependencies.
+
+Install [uv](https://docs.astral.sh/uv/) and sync dependencies from the repository:
+
+```sh
+uv sync --frozen
+```
+
+Add a stdio server to your agent's MCP configuration (replace both absolute paths):
+
+```json
+{
+  "mcpServers": {
+    "bilibili": {
+      "command": "uv",
+      "args": [
+        "run", "--frozen", "--directory", "/absolute/path/to/bilibili-mcp",
+        "bilibili-mcp", "--transport", "stdio"
+      ],
+      "env": {
+        "BILI_DATA_DIR": "/absolute/path/to/bilibili-data"
+      }
+    }
+  }
+}
+```
+
+Alternatively, an installed package can be launched as `bilibili-mcp --transport stdio`
+or `python -m bilibili_mcp.server --transport stdio`. The agent must be able to find
+the command in its PATH; use an absolute executable path if needed.
+
+stdio opens no listening port and does not use `BILI_MCP_TOKEN`: access is controlled
+by the local process and filesystem permissions. Use it only with a trusted owner
+agent. stdout is reserved for MCP messages and SDK logs go to stderr, as required by
+the [MCP transport specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports).
+HTTP still requires Bearer authentication. Set `BILI_DATA_DIR` to an absolute,
+writable directory outside the package (the default `/data` is intended for containers).
+Each subprocess has its own pending QR login and ASR jobs; use one active process
+per account/data directory. Disconnecting stops pending ASR jobs, whose results are
+not persisted. Login uses the same `login_start` / `login_poll` flow described above.
+Install ffmpeg locally for screenshots and ASR.
+
 ## Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `BILI_MCP_TOKEN` | Required | Bearer token for MCP requests (minimum 32 characters). |
+| `BILI_MCP_TOKEN` | Required for HTTP | Bearer token for HTTP MCP requests (minimum 32 characters); unused by stdio. |
+| `BILI_DATA_DIR` | `/data` | Writable runtime directory for saved login and screenshot temporary files. Set an absolute local path for stdio. |
 | `BILI_ASR_MODEL` | `small` | Whisper model used when a video has no subtitles. |
+| `PORT` | `8888` | HTTP listen port; unused by stdio. |
 
 ## License and Attribution
 
